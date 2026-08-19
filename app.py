@@ -608,7 +608,9 @@ def account_rental_sms(acc_id):
 
     try:
         client = get_client(tv_user, tv_key)
-        grouped = client.get_rental_sms_by_phone(phone)
+        # История, а не ожидание следующего SMS: читаем последние 7 дней
+        # отдельно для renewable и non-renewable rental.
+        grouped = client.get_rental_sms_history(phone, days_back=7)
     except TextVerifiedError as e:
         return jsonify(error="api_error", message=str(e)), 502
 

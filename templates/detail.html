@@ -197,10 +197,12 @@ function toggle(id,valId){const e=document.getElementById(id);const v=document.g
     </div>`;
 
     const rows = items.map(it=>{
-      const text = get(it,'text','body','message','sms','content');
+      // Поля официального SDK: sms_content, from_value, received_at.
+      // Оставляем также варианты v2 API для старых записей.
+      const text = get(it,'text','sms_content','body','message','sms','content');
       const code = get(it,'code','verification_code','verificationCode') || extractCode(text);
-      const from = get(it,'from','sender','from_number','fromNumber') || extractFrom(text);
-      const ts = get(it,'created_at','createdAt','received_at','receivedAt','date','timestamp');
+      const from = get(it,'from','from_value','sender','from_number','fromNumber') || extractFrom(text);
+      const ts = get(it,'received_at','receivedAt','created_at','createdAt','date','timestamp');
       const rtype = it._rental_type === 'renewable' ? 'Renewable'
                    : it._rental_type === 'non-renewable' ? 'Non-renewable' : '';
       const rtypePill = rtype ? `<span class="rental-pill">${rtype}</span>` : '';

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import time
 import threading
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -102,13 +103,16 @@ class TextVerifiedClient:
         to_number: Optional[str] = None,
         reservation_type: Optional[str] = None,
         reservation_id: Optional[str] = None,
+        since: Optional[datetime] = None,
         limit: int = 100,
         max_pages: int = 10,
     ) -> List[Dict[str, Any]]:
-        """GET /api/pub/v2/sms с пагинацией.
+        """Получает историю SMS, аналог ``client.sms.incoming(..., since=...)``.
 
-        reservation_type: 'renewable' | 'non-renewable' | 'verification' (опц.)
-        Возвращает плоский список объектов SMS из всех страниц.
+        В отличие от ``incoming`` из официального SDK этот метод не ждёт новые
+        сообщения: он читает уже сохранённую историю через v2 API. Фильтр
+        ``since`` также применяется локально, поэтому история не зависит от
+        того, поддерживает ли конкретная версия API параметр ``since``.
         """
         params: Dict[str, Any] = {"limit": limit}
         if to_number:
@@ -144,18 +148,51 @@ class TextVerifiedClient:
                 next_href = nxt["href"]
             else:
                 break
-        return all_items
 
-    def get_rental_sms_by_phone(self, phone: str) -> Dict[str, List[Dict[str, Any]]]:
-        """Возвращает SMS для номера, сгруппированные по типу rental."""
-        result: Dict[str, List[Dict[str, Any]]] = {"renewable": [], "non-renewable": []}
-        for rtype in ("renewable", "non-renewable"):
+        if since is None:
+            return all_items
+
+        # API может отдавать createdAt/receivedAt в разных форматах. Не
+        # отбрасываем сообщение, если дата неизвестна: лучше показать его,
+        # чем потерять код из-за различий версий API.
+        since_utc = since.astimezone(timezone.utc) if since.tzinfo else since.replace(tzinfo=timezone.utc)
+        return [item for item in all_items if self._message_is_since(item, since_utc)]
+
+    @staticmethod
+    def _message_is_since(item: Dict[str, Any], since: datetime) -> bool:
+        value = next((item.get(key) for key in (
+            "received_at", "receivedAt", "created_at", "createdAt", "date", "timestamp"
+        ) if item.get(key)), None)
+        if not value:
+            return True
+        if isinstance(value, datetime):
+            timestamp = value
+        else:
             try:
-                result[rtype] = self.list_sms(to_number=phone, reservation_type=rtype)
-            except TextVerifiedError:
-                # если один из типов упал — не валим всё, оставим пустой список
-                result[rtype] = []
-        return result
+                timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                return True
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        return timestamp.astimezone(timezone.utc) >= since
+
+    def get_rental_sms_history(self, phone: str, days_back: int = 7) -> Dict[str, List[Dict[str, Any]]]:
+        """Возвращает историю SMS активных rental за последние ``days_back`` дней.
+
+        Это намеренно два запроса — отдельно для renewable и non-renewable,
+        как в SDK-примере с двумя списками аренд.
+        """
+        since = datetime.now(timezone.utc).replace(microsecond=0)
+        from datetime import timedelta
+        since -= timedelta(days=max(0, days_back))
+        return {
+            "renewable": self.list_sms(to_number=phone, reservation_type="renewable", since=since),
+            "non-renewable": self.list_sms(to_number=phone, reservation_type="non-renewable", since=since),
+        }
+
+    def get_rental_sms_by_phone(self, phone: str, days_back: int = 7) -> Dict[str, List[Dict[str, Any]]]:
+        """Совместимый алиас для получения истории SMS по номеру."""
+        return self.get_rental_sms_history(phone, days_back=days_back)
 
 
 # -------- singleton helpers --------
