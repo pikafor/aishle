@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Настройка — Менеджер аккаунтов{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card glass">
+    <div class="logo"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v2.5m0 15V22M4.9 4.9l1.8 1.8m10.6 10.6 1.8 1.8M2 12h2.5m15 0H22M4.9 19.1l1.8-1.8m10.6-10.6 1.8-1.8"/></svg></div>
+    <h1>Первый запуск</h1>
+    <div class="sub">Создание администратора</div>
+    <form method="post">
+      <div style="margin-bottom:14px"><label>Логин</label><input type="text" name="username" required autofocus></div>
+      <div style="margin-bottom:14px"><label>Пароль</label><input type="password" name="password" required minlength="4"></div>
+      <div style="margin-bottom:22px"><label>Повторите пароль</label><input type="password" name="password2" required minlength="4"></div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Этот пользователь станет администратором.<br>Вход в приложение — по логину и паролю.</p>
+      <button class="btn" style="width:100%" type="submit">Создать администратора</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

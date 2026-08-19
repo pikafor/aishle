@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Пользователи — Менеджер{% endblock %}
+{% block content %}
+<h1>Пользователи</h1>
+
+<div class="card" style="padding:0;overflow:hidden">
+  <div class="tbl-wrap">
+  <table class="glass-table">
+    <thead><tr><th>#</th><th>Логин</th><th>Роль</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr>
+      <td class="muted">{{ u.id }}</td>
+      <td>{{ u.username }}{% if u.id == session.user_id %} <span class="muted">(вы)</span>{% endif %}</td>
+      <td>{% if u.is_admin %}<span class="perms">админ</span>{% else %}пользователь{% endif %}</td>
+      <td>{% if u.is_active %}<span class="badge" style="background:var(--ok)">активен</span>{% else %}<span class="badge" style="background:var(--danger)">заблокирован</span>{% endif %}</td>
+      <td>{% if u.id != session.user_id %}
+        <form method="post" action="/admin/users/{{ u.id }}/toggle" style="display:inline">
+          <button class="btn small sec" type="submit">{% if u.is_active %}Заблокировать{% else %}Активировать{% endif %}</button>
+        </form>
+      {% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card"><h2 style="margin-top:0">Добавить пользователя</h2>
+<form method="post" action="/admin/users">
+<div class="grid">
+  <div><label>Логин</label><input name="username" required></div>
+  <div><label>Пароль</label><input type="password" name="password" required minlength="4"></div>
+  <div style="display:flex;align-items:center;gap:10px;background:var(--input-bg);padding:12px;border-radius:12px;border:1px solid var(--border)">
+    <input type="checkbox" name="is_admin" id="is_adm" style="width:auto">
+    <label for="is_adm" style="margin:0;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);cursor:pointer">Сделать администратором</label>
+  </div>
+</div>
+<button class="btn mt16" type="submit">Создать</button>
+</form></div>
+{% endblock %}

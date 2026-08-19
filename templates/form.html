@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{% if account %}Редактировать{% else %}Новый аккаунт{% endif %}{% endblock %}
+{% block content %}
+<h1>{% if account %}Редактировать аккаунт{% else %}Новый аккаунт Google{% endif %}</h1>
+<form method="post" enctype="multipart/form-data" class="card"
+      action="{% if account %}/accounts/{{ account.id }}/edit{% else %}/accounts/new{% endif %}">
+<div class="grid">
+  <div><label>First name</label><input name="first_name" value="{{ account.first_name or '' }}"></div>
+  <div><label>Second name</label><input name="second_name" value="{{ account.second_name or '' }}"></div>
+  <div><label>Sex</label><select name="sex"><option value="">—</option><option value="male" {% if account and account.sex=='male' %}selected{% endif %}>male</option><option value="female" {% if account and account.sex=='female' %}selected{% endif %}>female</option></select></div>
+  <div><label>Date of birth</label><input type="date" name="date_of_birth" value="{{ account.date_of_birth if account and account.date_of_birth else '' }}"></div>
+  <div><label>Number</label><input name="number" value="{{ account.number or '' }}"></div>
+  <div><label>Address</label><input name="address" value="{{ account.address or '' }}"></div>
+  <div><label>Mail *</label><input type="email" name="mail" required value="{{ account.mail or '' }}"></div>
+  <div><label>MailPass</label><input name="mailPass" value="{{ account.mailPass or '' }}"></div>
+  <div><label>reMail</label><input type="email" name="reMail" value="{{ account.reMail or '' }}"></div>
+  <div><label>Proxy (ip:port:user:pass)</label><input name="proxy" value="{{ account.proxy or '' }}"></div>
+  <div><label>Auth (TOTP-secret)</label><input name="auth" value="{{ account.auth or '' }}" class="mono"></div>
+  <div><label>Основной статус</label><select name="status">{% for s in STATUSES %}<option value="{{ s }}" {% if (account and account.status==s) or (not account and s=='new') %}selected{% endif %}>{{ STATUS_LABELS[s] }}</option>{% endfor %}</select></div>
+  <div><label>Доп. статус</label><select name="status2">{% for s in STATUSES2 %}<option value="{{ s }}" {% set cur=(account.status2 if account and account.status2 in STATUSES2 else 'untouched') if account else 'untouched' %}{% if s==cur %}selected{% endif %}>{{ STATUS_LABELS2[s] }}</option>{% endfor %}</select></div>
+  <div><label>Файл</label><input type="file" name="file">{% if account and account.file_path %}<div class="muted" style="font-size:11px">Загружен: <a href="/accounts/{{ account.id }}/file">{{ account.file_path.split('/')[-1] }}</a></div>{% endif %}</div>
+  <div style="grid-column:1/-1"><label>Заметки</label><textarea name="notes">{{ account.notes or '' }}</textarea></div>
+</div>
+<div class="btn-row"><button class="btn" type="submit">Сохранить</button>
+  <a href="{% if account %}/accounts/{{ account.id }}{% else %}/{% endif %}" class="btn sec">Отмена</a></div>
+</form>
+{% endblock %}

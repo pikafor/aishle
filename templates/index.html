@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Аккаунты — Менеджер{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+  <h1 style="margin:0">Аккаунты <span class="perms">{{ total }}</span></h1>
+  <a href="/accounts/new" class="btn">+ Добавить аккаунт</a>
+</div>
+
+<div class="stats">
+  {% for s in STATUSES %}
+  <div class="stat glass">
+    <div class="label">{{ STATUS_LABELS[s] }}</div>
+    <div class="value" style="color:{{ STATUS_COLORS[s] }}">{{ by_status[s] }}<small>акк.</small></div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if accounts %}
+<div class="card" style="padding:0;overflow:hidden">
+  <div class="tbl-wrap">
+  <table class="glass-table">
+    <thead><tr><th>#</th><th>Имя</th><th>E-mail</th><th>Статусы</th><th>Прокси</th><th>Телефон</th><th></th></tr></thead>
+    <tbody>
+    {% for a in accounts %}
+    <tr>
+      <td class="muted">{{ a.id }}</td>
+      <td>{{ (a.first_name or '') + ' ' + (a.second_name or '') }}</td>
+      <td class="mono">{{ a.mail }}</td>
+      <td>
+        <div class="pills">
+          <span class="badge" style="background:{{ STATUS_COLORS[a.status] }}">{{ STATUS_LABELS[a.status] }}</span>
+          {% if a.status2 and a.status2 in STATUSES2 %}
+          <span class="badge badge2" style="color:{{ STATUS_COLORS2[a.status2] }}">{{ STATUS_LABELS2[a.status2] }}</span>
+          {% else %}
+          <span class="badge badge2" style="color:var(--muted)">{{ STATUS_LABELS2['untouched'] }}</span>
+          {% endif %}
+        </div>
+      </td>
+      <td style="font-size:12px">{{ a.proxy or '—' }}</td>
+      <td class="mono">{{ a.number or '—' }}</td>
+      <td><a href="/accounts/{{ a.id }}" class="btn small sec">Открыть</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="card empty">Аккаунтов пока нет.
+  {% if session.is_admin %}<a href="/accounts/new">Добавить первый</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

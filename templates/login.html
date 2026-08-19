@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Вход — Менеджер аккаунтов{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card glass">
+    <div class="logo"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg></div>
+    <h1>Добро пожаловать</h1>
+    <div class="sub">Google Account Manager</div>
+    <form method="post">
+      <div style="margin-bottom:14px"><label>Логин</label><input type="text" name="username" required autofocus></div>
+      <div style="margin-bottom:22px"><label>Пароль</label><input type="password" name="password" required></div>
+      <button class="btn" style="width:100%" type="submit">Войти</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Аккаунт #{{ acc.id }}{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+  <h1 style="margin:0">
+    {{ acc.mail }}
+    <span class="pills" style="margin-left:8px">
+      <span class="badge" style="background:{{ STATUS_COLORS[acc.status] }}">{{ STATUS_LABELS[acc.status] }}</span>
+      {% set s2 = acc.status2 if acc.status2 in STATUSES2 else 'untouched' %}
+      <span class="badge badge2" style="color:{{ STATUS_COLORS2[s2] }}">{{ STATUS_LABELS2[s2] }}</span>
+    </span>
+  </h1>
+  <div class="btn-row">
+    {% if can_edit %}<a href="/accounts/{{ acc.id }}/edit" class="btn small">Редактировать</a>{% endif %}
+    <a href="/" class="btn small sec">К списку</a>
+    {% if session.is_admin %}
+    <form method="post" action="/accounts/{{ acc.id }}/delete" style="display:inline"
+      onsubmit="return confirm('Удалить аккаунт?')"><button class="btn small danger">Удалить</button></form>
+    {% endif %}
+  </div>
+</div>
+
+{% if acc.auth %}
+<div class="totp-box" id="totpBox">
+  <div class="l">Текущий 2FA-код Google-аккаунта</div>
+  <div class="code" id="totpCode">{{ totp_code }}</div>
+  <div class="sub">Секрет: <span class="mono" style="color:var(--text)">{{ acc.auth }}</span></div>
+  <div class="btn-row" style="justify-content:center;margin-top:12px;position:relative;z-index:1">
+    <button class="btn small" onclick="copyCode()">Копировать</button>
+  </div>
+</div>
+<p style="font-size:12px;color:var(--muted);margin:10px 0 18px">
+  Этот же код генерирует <a href="https://convertilo.ru/tools/2fa-token-generator/" target="_blank">convertilo.ru</a>,
+  если ввести туда секрет <span class="mono">{{ acc.auth }}</span>
+</p>
+{% endif %}
+
+<div class="card">
+<div class="detail-grid">
+  <div class="field"><div class="k">First name</div><div class="v">{{ acc.first_name or '—' }}</div></div>
+  <div class="field"><div class="k">Second name</div><div class="v">{{ acc.second_name or '—' }}</div></div>
+  <div class="field"><div class="k">Sex</div><div class="v">{{ acc.sex or '—' }}</div></div>
+  <div class="field"><div class="k">Date of birth</div><div class="v">{{ acc.date_of_birth or '—' }}</div></div>
+  <div class="field"><div class="k">Number</div><div class="v mono">{{ acc.number or '—' }}</div></div>
+  <div class="field"><div class="k">Address</div><div class="v">{{ acc.address or '—' }}</div></div>
+  <div class="field"><div class="k">Mail</div><div class="v mono">{{ acc.mail }}</div></div>
+  <div class="field"><div class="k">MailPass</div><div class="v"><span class="mono" id="mp">••••••••</span><span id="mpVal" hidden>{{ acc.mailPass or '' }}</span><button class="btn small sec" style="margin-left:8px" onclick="toggle('mp','mpVal')">показать</button></div></div>
+  <div class="field"><div class="k">reMail</div><div class="v mono">{{ acc.reMail or '—' }}</div></div>
+  <div class="field"><div class="k">Proxy</div><div class="v mono">{{ acc.proxy or '—' }}</div></div>
+  <div class="field"><div class="k">Auth (TOTP secret)</div><div class="v mono">{{ acc.auth or '—' }}</div></div>
+  <div class="field"><div class="k">Файл</div><div class="v">{% if acc.file_path %}<a href="/accounts/{{ acc.id }}/file">Скачать</a>{% else %}—{% endif %}</div></div>
+  <div class="field"><div class="k">Владелец</div><div class="v">{{ acc.owner_name }}</div></div>
+</div>
+</div>
+
+{% if can_edit %}
+<div class="card">
+<h2 style="margin-top:0">Изменение статусов</h2>
+<form method="post" action="/accounts/{{ acc.id }}/status" class="btn-row" style="align-items:flex-end">
+  <div style="flex:1;min-width:180px"><label>Основной статус</label>
+    <select name="status">{% for s in STATUSES %}<option value="{{ s }}" {% if s==acc.status %}selected{% endif %}>{{ STATUS_LABELS[s] }}</option>{% endfor %}</select>
+  </div>
+  <div style="flex:1;min-width:180px"><label>Дополнительный статус</label>
+    <select name="status2">{% for s in STATUSES2 %}<option value="{{ s }}" {% set cur=acc.status2 if acc.status2 in STATUSES2 else 'untouched' %}{% if s==cur %}selected{% endif %}>{{ STATUS_LABELS2[s] }}</option>{% endfor %}</select>
+  </div>
+  <button class="btn" type="submit">Сохранить</button>
+</form>
+</div>
+{% endif %}
+
+{% if can_share %}
+<h2 style="margin-top:24px">Доступ к аккаунту</h2>
+<div class="card">
+  <table class="glass-table">
+    {% if accesses %}
+    <thead><tr><th>Пользователь</th><th>Права</th><th></th></tr></thead>
+    {% for ac in accesses %}
+    <tbody><tr><td>{{ ac.username }}</td><td><span class="perms">{{ PERMS[ac.permission] }}</span></td>
+      <td><form method="post" action="/accounts/{{ acc.id }}/share/{{ ac.id }}/revoke"><button class="btn small danger">Отозвать</button></form></td></tr>
+    {% endfor %}</tbody>
+    {% else %}
+    <tr><td class="empty">Доступ пока никому не выдан.</td></tr>
+    {% endif %}
+  </table>
+  <form method="post" action="/accounts/{{ acc.id }}/share" class="btn-row mt16">
+    <select name="user_id" required style="min-width:200px"><option value="">— выберите —</option>
+      {% for u in users %}{% if u.id != acc.owner_id %}<option value="{{ u.id }}">{{ u.username }}</option>{% endif %}{% endfor %}</select>
+    <select name="permission"><option value="view">Просмотр</option><option value="edit">Редактирование</option><option value="share">Передача</option></select>
+    <button class="btn small">Выдать</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+setInterval(async()=>{
+  try{const r=await fetch('/accounts/{{ acc.id }}/totp');const j=await r.json();document.getElementById('totpCode').textContent=j.code}catch(e){}
+},5000);
+function copyCode(){const c=document.getElementById('totpCode').textContent;navigator.clipboard.writeText(c).then(()=>{const b=event.target;const o=b.textContent;b.textContent='Скопировано';setTimeout(()=>b.textContent=o,1200)})}
+function toggle(id,valId){const e=document.getElementById(id);const v=document.getElementById(valId);if(e.textContent.startsWith('•')){e.textContent=v.textContent;e.nextElementSibling.nextElementSibling.textContent='скрыть'}else{e.textContent='••••••••';e.nextElementSibling.nextElementSibling.textContent='показать'}}
+</script>
+{% endblock %}
