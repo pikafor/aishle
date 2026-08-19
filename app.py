@@ -598,7 +598,7 @@ def account_rental_sms(acc_id):
             return jsonify(payload)
 
     tv_user, tv_key = tv_creds()
-    if not tv_user or not tv_key:
+    if not tv_key:
         return jsonify(error="no_creds",
                        message="API-креды TextVerified не заданы (Настройки администратора)."), 400
 
@@ -622,13 +622,15 @@ def account_rental_sms(acc_id):
     flat = []
     for rtype, items in grouped.items():
         for it in items:
+            if it.get("encrypted"):
+                continue  # зашифрованные SMS не содержат ни кода, ни текста
             flat.append({**it, "_rental_type": rtype})
     flat.sort(key=_ts, reverse=True)
 
     payload = {
         "phone": phone,
-        "renewable_count": len(grouped["renewable"]),
-        "nonrenewable_count": len(grouped["non-renewable"]),
+        "renewable_count": sum(1 for it in grouped["renewable"] if not it.get("encrypted")),
+        "nonrenewable_count": sum(1 for it in grouped["nonrenewable"] if not it.get("encrypted")),
         "items": flat[:200],          # ограничим 200 последних
         "fetched_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "cached": False,

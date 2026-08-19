@@ -9,17 +9,20 @@
     Эти данные используются для получения истории SMS-кодов rental-номеров
     на странице аккаунта. Креды хранятся в локальной БД и не отправляются третьим лицам.
     Получить их можно в
-    <a href="https://www.textverified.com/account/api" target="_blank" rel="noopener">личном кабинете TextVerified</a>.
+    <a href="https://www.textverified.com/app/api/configure" target="_blank" rel="noopener">API Settings в кабинете TextVerified</a>.
   </p>
   <form method="post">
     <input type="hidden" name="action" value="save">
     <div class="grid">
       <div>
-        <label>API Username (apiUsername)</label>
-        <input name="tv_username" value="{{ tv_user }}" autocomplete="off" spellcheck="false">
+        <label>API Username <span class="muted" style="font-weight:400">(email от регистрации, необязательно)</span></label>
+        <input name="tv_username" value="{{ tv_user }}" autocomplete="off" spellcheck="false" placeholder="example@example.com">
+        <div class="muted" style="font-size:11px;margin-top:4px">
+          Можно оставить пустым, если ключ работает сам по себе (legacy-аутентификация).
+        </div>
       </div>
       <div>
-        <label>API Key
+        <label>API Key / AuthKey
           {% if tv_key_set %}<span class="muted" style="font-weight:400">(сейчас: <code>{{ tv_key_masked }}</code>)</span>{% endif %}
         </label>
         <input name="tv_api_key" type="password" placeholder="{{ '•••••••• (оставьте пустым, чтобы не менять)' if tv_key_set else 'API Key' }}" autocomplete="new-password">
@@ -34,8 +37,9 @@
     </div>
   </form>
   <p class="muted" style="font-size:12px;margin-top:14px">
-    💡 Запрос <code>/api/pub/v2/sms?to_number=…&amp;reservationType=…</code> используется
-    отдельно для renewable и non-renewable rental — результаты объединяются.
+    💡 Аутентификация: заголовки <code>X-API-KEY</code> + <code>X-API-USERNAME</code>
+    (если username пуст — пробуем legacy <code>SimpleAuthentication</code> по одному ключу).
+    История тянется через <code>GET /api/pub/v2/sms?to=…&amp;reservationType=renewable|nonrenewable</code>.
   </p>
 </div>
 {% endblock %}
