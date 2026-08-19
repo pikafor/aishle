@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Настройки — Менеджер{% endblock %}
+{% block content %}
+<h1>Настройки</h1>
+
+<div class="card">
+  <h2 style="margin-top:0">TextVerified API</h2>
+  <p class="muted" style="font-size:13px;margin-bottom:18px">
+    Эти данные используются для получения истории SMS-кодов rental-номеров
+    на странице аккаунта. Креды хранятся в локальной БД и не отправляются третьим лицам.
+    Получить их можно в
+    <a href="https://www.textverified.com/account/api" target="_blank" rel="noopener">личном кабинете TextVerified</a>.
+  </p>
+  <form method="post">
+    <input type="hidden" name="action" value="save">
+    <div class="grid">
+      <div>
+        <label>API Username (apiUsername)</label>
+        <input name="tv_username" value="{{ tv_user }}" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label>API Key
+          {% if tv_key_set %}<span class="muted" style="font-weight:400">(сейчас: <code>{{ tv_key_masked }}</code>)</span>{% endif %}
+        </label>
+        <input name="tv_api_key" type="password" placeholder="{{ '•••••••• (оставьте пустым, чтобы не менять)' if tv_key_set else 'API Key' }}" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+      <button class="btn" type="submit">Сохранить</button>
+      <button class="btn sec" type="submit" name="action" value="test"
+              onclick="this.form.action.value='test'; this.form.submit(); return false;">
+        Проверить подключение
+      </button>
+    </div>
+  </form>
+  <p class="muted" style="font-size:12px;margin-top:14px">
+    💡 Запрос <code>/api/pub/v2/sms?to_number=…&amp;reservationType=…</code> используется
+    отдельно для renewable и non-renewable rental — результаты объединяются.
+  </p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('button[name="action"]').forEach(b=>{
+  b.addEventListener('click', e=>{
+    const a=b.getAttribute('value');
+    const h=document.querySelector('input[name="action"]');
+    if(h) h.value=a;
+  });
+});
+</script>
+{% endblock %}

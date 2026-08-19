@@ -29,10 +29,13 @@
       <td>
         <div class="pills">
           <span class="badge" style="background:{{ STATUS_COLORS[a.status] }}">{{ STATUS_LABELS[a.status] }}</span>
-          {% if a.status2 and a.status2 in STATUSES2 %}
-          <span class="badge badge2" style="color:{{ STATUS_COLORS2[a.status2] }}">{{ STATUS_LABELS2[a.status2] }}</span>
+          {% set s2set = a.status2|parse_status2 %}
+          {% if s2set %}
+            {% for sv in s2set %}
+            <span class="badge badge2" style="color:{{ STATUS_COLORS2[sv] }}">{{ STATUS_LABELS2[sv] }}</span>
+            {% endfor %}
           {% else %}
-          <span class="badge badge2" style="color:var(--muted)">{{ STATUS_LABELS2['untouched'] }}</span>
+          <span class="badge badge2" style="color:var(--muted)">Не тронут</span>
           {% endif %}
         </div>
       </td>

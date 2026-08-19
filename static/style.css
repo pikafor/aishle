@@ -18,6 +18,10 @@
   --grad: linear-gradient(135deg,#818cf8 0%,#9ca3af 55%,#cbd5e1 100%);
   --ok: #34d399; --warn: #fbbf24; --danger: #f87171;
   --input: rgba(255,255,255,.08);
+  --select-bg: rgba(255,255,255,.08);
+  --select-option-bg: rgba(30,35,60,.95);
+  --select-option-text: #eef2ff;
+  --select-option-hover: rgba(129,140,248,.30);
   --blur: blur(26px) saturate(170%);
   --shadow: 0 18px 50px rgba(0,0,0,.55);
   --inner-hi: inset 0 1px 0 rgba(255,255,255,.14);   /* блик сверху */
@@ -41,8 +45,10 @@
   --grad: linear-gradient(135deg,#4f6bff,#64748b);
   --ok: #059669; --warn: #b45309; --danger: #dc2626;
   --input: rgba(255,255,255,.6);
-  --select-bg: #ffffff;                  /* фон выпадающего списка */
-  --select-option: #f1f5fb;              /* фон опций списка */
+  --select-bg: #f4f7fd;
+  --select-option-bg: #eef2fb;
+  --select-option-text: #1d2340;
+  --select-option-hover: rgba(79,107,255,.15);
   --blur: blur(26px) saturate(150%);
   --shadow: 0 18px 50px rgba(60,80,160,.22);
   --inner-hi: inset 0 1px 0 rgba(255,255,255,.9);
@@ -151,10 +157,26 @@ label{display:block;font-size:10.5px;color:var(--muted);margin-bottom:6px;font-w
 input,select,textarea{width:100%;padding:11px 13px;border-radius:13px;
   background:var(--input);border:1px solid var(--stroke);color:var(--text);font-size:13.5px;
   font-family:inherit;transition:all .2s;backdrop-filter:blur(8px)}
-/* выпадающие списки — тёмный вид */
-select{background:var(--select-bg);color:var(--text);appearance:auto;cursor:pointer}
-select option, select optgroup{background:var(--select-option);color:var(--text)}
-select option:checked{background:rgba(129,140,248,.35);color:#fff}
+/* выпадающие списки — кастомный вид под тему */
+select{
+  background:var(--select-bg);color:var(--select-option-text);
+  appearance:auto;cursor:pointer;
+  color-scheme:dark;              /* наследуем от страницы */
+}
+:root[data-theme="light"] select{color-scheme:light}
+select option, select optgroup{
+  background:var(--select-option-bg) !important;
+  color:var(--select-option-text) !important;
+}
+select option:checked{
+  background:var(--select-option-hover) !important;
+  color:var(--select-option-text) !important;
+}
+select:focus option:hover,
+select option:hover{
+  background:var(--select-option-hover) !important;
+  color:var(--select-option-text) !important;
+}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
   box-shadow:0 0 0 4px rgba(129,140,248,.18),0 0 30px rgba(129,140,248,.15)}
 textarea{min-height:76px;resize:vertical}
@@ -237,6 +259,70 @@ h2{font-size:17px;margin:22px 0 12px;font-weight:700}
 .mt16{margin-top:16px}
 .perms{display:inline-block;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;
   background:var(--glass-2);border:1px solid var(--stroke)}
+
+/* ---------- Чипы (множественные доп.статусы) ---------- */
+.chips-wrap{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.chip-check{display:inline-flex;cursor:pointer}
+.chip-check input{display:none}
+.chip-label{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:7px 14px;border-radius:99px;font-size:12px;font-weight:700;
+  background:var(--glass-2);border:1.5px solid var(--stroke);color:var(--muted);
+  transition:all .2s;letter-spacing:.3px;user-select:none;
+  box-shadow:var(--inner-hi);
+}
+.chip-label::before{
+  content:"";width:7px;height:7px;border-radius:50%;
+  background:var(--chip-color,var(--muted));opacity:.45;
+  transition:opacity .2s;
+}
+.chip-check input:checked + .chip-label{
+  background:rgba(0,0,0,.12);
+  border-color:var(--chip-color,var(--accent));
+  color:var(--chip-color,var(--accent));
+  box-shadow:0 4px 18px rgba(129,140,248,.25),var(--inner-hi);
+}
+:root[data-theme="dark"] .chip-check input:checked + .chip-label{
+  background:rgba(255,255,255,.08);
+}
+.chip-check input:checked + .chip-label::before{opacity:1}
+.chip-label:hover{
+  border-color:var(--chip-color,var(--accent));
+  transform:translateY(-1px);
+}
+
+/* ---------- Rental SMS (TextVerified) ---------- */
+.rental-sms-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.rental-phone{font-size:12px}
+.rental-sms-body{min-height:48px}
+.rental-sms-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;color:var(--muted);font-size:13px}
+.spinner{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--stroke);border-top-color:var(--accent);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.rental-sms-meta{display:flex;flex-wrap:wrap;gap:14px;padding:8px 12px;border-radius:12px;
+  background:var(--glass-2);border:1px solid var(--stroke);font-size:12px;margin-bottom:12px}
+.rental-sms-list{display:flex;flex-direction:column;gap:8px;max-height:480px;overflow-y:auto;padding-right:4px}
+.rental-sms-item{background:var(--glass-2);border:1px solid var(--stroke);border-radius:14px;
+  padding:11px 14px;box-shadow:var(--inner-hi);transition:border-color .2s,transform .2s}
+.rental-sms-item:hover{border-color:var(--stroke-2);transform:translateX(2px)}
+.rental-sms-row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rental-code{display:inline-flex;align-items:center;gap:6px;
+  font-family:"SF Mono",Menlo,Consolas,monospace;font-size:15px;font-weight:800;
+  letter-spacing:2px;padding:5px 12px;border-radius:10px;
+  background:linear-gradient(135deg,rgba(129,140,248,.22),rgba(34,211,238,.18));
+  color:var(--text);border:1px solid rgba(129,140,248,.4);
+  cursor:pointer;transition:all .18s;user-select:none;box-shadow:var(--inner-hi)}
+.rental-code:hover{filter:brightness(1.15);transform:translateY(-1px);box-shadow:0 6px 20px rgba(129,140,248,.4)}
+.rental-code.copied{background:linear-gradient(135deg,rgba(52,211,153,.30),rgba(34,211,238,.18))!important;border-color:rgba(52,211,153,.5)!important;color:var(--ok)!important}
+.rental-pill{font-size:10px;font-weight:700;letter-spacing:.4px;padding:3px 9px;border-radius:99px;
+  background:var(--glass-3);border:1px solid var(--stroke);color:var(--muted);text-transform:uppercase}
+.rental-sms-time{margin-left:auto;font-size:11px}
+.rental-sms-from{font-size:11.5px;margin-top:4px}
+.rental-sms-text{font-size:12px;margin-top:6px;padding:6px 10px;border-radius:8px;
+  background:rgba(0,0,0,.18);border:1px solid var(--stroke);word-break:break-word;white-space:pre-wrap}
+:root[data-theme="light"] .rental-sms-text{background:rgba(0,0,0,.04)}
+.rental-sms-list::-webkit-scrollbar{width:6px}
+.rental-sms-list::-webkit-scrollbar-thumb{background:var(--stroke-2);border-radius:99px}
+.rental-sms-list::-webkit-scrollbar-track{background:transparent}
 
 /* ---------- Адаптив ---------- */
 @media (max-width:860px){
