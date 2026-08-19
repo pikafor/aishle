@@ -17,7 +17,17 @@
   <div><label>Proxy (ip:port:user:pass)</label><input name="proxy" value="{{ account.proxy or '' }}"></div>
   <div><label>Auth (TOTP-secret)</label><input name="auth" value="{{ account.auth or '' }}" class="mono"></div>
   <div><label>Основной статус</label><select name="status">{% for s in STATUSES %}<option value="{{ s }}" {% if (account and account.status==s) or (not account and s=='new') %}selected{% endif %}>{{ STATUS_LABELS[s] }}</option>{% endfor %}</select></div>
-  <div><label>Доп. статус</label><select name="status2">{% for s in STATUSES2 %}<option value="{{ s }}" {% set cur=(account.status2 if account and account.status2 in STATUSES2 else 'untouched') if account else 'untouched' %}{% if s==cur %}selected{% endif %}>{{ STATUS_LABELS2[s] }}</option>{% endfor %}</select></div>
+  <div><label>Доп. статусы (можно несколько)</label>
+    {% set cur_s2 = (account.status2|parse_status2) if account else set() %}
+    <div class="chips-wrap">
+      {% for s in STATUSES2 %}
+      <label class="chip-check">
+        <input type="checkbox" name="status2" value="{{ s }}" {% if s in cur_s2 %}checked{% endif %}>
+        <span class="chip-label" style="--chip-color:{{ STATUS_COLORS2[s] }}">{{ STATUS_LABELS2[s] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
   <div><label>Файл</label><input type="file" name="file">{% if account and account.file_path %}<div class="muted" style="font-size:11px">Загружен: <a href="/accounts/{{ account.id }}/file">{{ account.file_path.split('/')[-1] }}</a></div>{% endif %}</div>
   <div style="grid-column:1/-1"><label>Заметки</label><textarea name="notes">{{ account.notes or '' }}</textarea></div>
 </div>

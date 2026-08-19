@@ -27,6 +27,17 @@ STATUSES2 = ["untouched","phone_added","twofa_added"]
 STATUS_LABELS2 = {"untouched":"Не тронут","phone_added":"Добавлен номер","twofa_added":"Добавлен 2FA"}
 STATUS_COLORS2 = {"untouched":"#64748b","phone_added":"#22d3ee","twofa_added":"#818cf8"}
 
+def parse_status2(val):
+    """Разбирает status2 из БД в множество активных значений."""
+    if not val:
+        return set()
+    return {v.strip() for v in val.split(",") if v.strip() in STATUSES2}
+
+def format_status2(vals):
+    """Собирает множество значений status2 в строку для хранения."""
+    valid = [v for v in vals if v in STATUSES2]
+    return ",".join(valid) if valid else "untouched"
+
 PERMS = {"view":"Просмотр","edit":"Редактирование","share":"Передача"}
 
 app = Flask(__name__)
@@ -42,6 +53,10 @@ def inject_css_version():
     if css_path.exists():
         ver = hashlib.md5(css_path.read_bytes()).hexdigest()[:8]
     return {"css_v": ver}
+
+@app.template_filter("parse_status2")
+def parse_status2_filter(val):
+    return parse_status2(val)
 
 
 # ----- DB helpers -----
@@ -89,7 +104,7 @@ def get_db():
         if "status2" not in cols:
             g.db.execute("ALTER TABLE accounts ADD COLUMN status2 TEXT DEFAULT 'untouched'")
         # Сбрасываем старые значения status2 (new/warmup/active и т.п.) в "untouched"
-        g.db.execute("UPDATE accounts SET status2='untouched' WHERE status2 NOT IN ('untouched','phone_added','twofa_added')")
+        g.db.execute("UPDATE accounts SET status2='untouched' WHERE status2 NOT IN ('untouched','phone_added','twofa_added') AND status2 NOT LIKE '%,%'")
         g.db.commit()
     return g.db
 
@@ -269,8 +284,8 @@ def account_new():
             fp = str(UPLOAD_DIR / safe)
         st = f.get("status", "new")
         if st not in STATUSES: st = "new"
-        st2 = f.get("status2", "untouched")
-        if st2 not in STATUSES2: st2 = "untouched"
+        st2_list = f.getlist("status2")
+        st2 = format_status2(st2_list)
         cur = db.execute("""INSERT INTO accounts (first_name,second_name,address,sex,date_of_birth,
             number,mail,mailPass,reMail,proxy,file_path,auth,status,status2,notes,owner_id)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -279,7 +294,7 @@ def account_new():
              fp, f.get("auth") or None, st, st2, f.get("notes"), session["user_id"]))
         db.commit()
         return redirect(url_for("account_detail", acc_id=cur.lastrowid))
-    return render_template("form.html", account=None, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2)
+    return render_template("form.html", account=None, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2, STATUS_COLORS2=STATUS_COLORS2)
 
 
 @app.route("/accounts/<int:acc_id>/edit", methods=["GET","POST"])
@@ -301,8 +316,11 @@ def account_edit(acc_id):
             fp = str(UPLOAD_DIR / safe)
         st = f.get("status", acc["status"])
         if st not in STATUSES: st = acc["status"]
-        st2 = f.get("status2", acc["status2"] or "untouched")
-        if st2 not in STATUSES2: st2 = acc["status2"] or "untouched"
+        st2_list = f.getlist("status2")
+        if st2_list:
+            st2 = format_status2(st2_list)
+        else:
+            st2 = acc["status2"] or "untouched"
         db.execute("""UPDATE accounts SET first_name=?,second_name=?,address=?,sex=?,date_of_birth=?,
             number=?,mail=?,mailPass=?,reMail=?,proxy=?,file_path=?,auth=?,status=?,status2=?,notes=?,updated_at=datetime('now')
             WHERE id=?""",
@@ -311,7 +329,7 @@ def account_edit(acc_id):
              fp, f.get("auth") or None, st, st2, f.get("notes"), acc_id))
         db.commit()
         return redirect(url_for("account_detail", acc_id=acc_id))
-    return render_template("form.html", account=acc, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2)
+    return render_template("form.html", account=acc, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2, STATUS_COLORS2=STATUS_COLORS2)
 
 
 @app.route("/accounts/<int:acc_id>/status", methods=["POST"])
@@ -321,14 +339,14 @@ def account_status(acc_id):
         return ("", 403)
     db = get_db()
     st = request.form.get("status","")
-    st2 = request.form.get("status2","")
+    st2_list = request.form.getlist("status2")
     updates, params = [], []
     if st in STATUSES:
         updates.append("status=?")
         params.append(st)
-    if st2 in STATUSES2:
-        updates.append("status2=?")
-        params.append(st2)
+    st2 = format_status2(st2_list)
+    updates.append("status2=?")
+    params.append(st2)
     if updates:
         updates.append("updated_at=datetime('now')")
         params.append(acc_id)

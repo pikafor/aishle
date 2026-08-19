@@ -6,8 +6,14 @@
     {{ acc.mail }}
     <span class="pills" style="margin-left:8px">
       <span class="badge" style="background:{{ STATUS_COLORS[acc.status] }}">{{ STATUS_LABELS[acc.status] }}</span>
-      {% set s2 = acc.status2 if acc.status2 in STATUSES2 else 'untouched' %}
-      <span class="badge badge2" style="color:{{ STATUS_COLORS2[s2] }}">{{ STATUS_LABELS2[s2] }}</span>
+      {% set s2set = acc.status2|parse_status2 %}
+      {% if s2set %}
+        {% for sv in s2set %}
+        <span class="badge badge2" style="color:{{ STATUS_COLORS2[sv] }}">{{ STATUS_LABELS2[sv] }}</span>
+        {% endfor %}
+      {% else %}
+        <span class="badge badge2" style="color:var(--muted)">{{ STATUS_LABELS2['untouched'] }}</span>
+      {% endif %}
     </span>
   </h1>
   <div class="btn-row">
@@ -56,12 +62,20 @@
 {% if can_edit %}
 <div class="card">
 <h2 style="margin-top:0">Изменение статусов</h2>
-<form method="post" action="/accounts/{{ acc.id }}/status" class="btn-row" style="align-items:flex-end">
+<form method="post" action="/accounts/{{ acc.id }}/status" class="btn-row" style="align-items:flex-end;flex-wrap:wrap">
   <div style="flex:1;min-width:180px"><label>Основной статус</label>
     <select name="status">{% for s in STATUSES %}<option value="{{ s }}" {% if s==acc.status %}selected{% endif %}>{{ STATUS_LABELS[s] }}</option>{% endfor %}</select>
   </div>
-  <div style="flex:1;min-width:180px"><label>Дополнительный статус</label>
-    <select name="status2">{% for s in STATUSES2 %}<option value="{{ s }}" {% set cur=acc.status2 if acc.status2 in STATUSES2 else 'untouched' %}{% if s==cur %}selected{% endif %}>{{ STATUS_LABELS2[s] }}</option>{% endfor %}</select>
+  <div style="flex:2;min-width:280px"><label>Доп. статусы (можно несколько)</label>
+    {% set cur_s2 = acc.status2|parse_status2 %}
+    <div class="chips-wrap">
+      {% for s in STATUSES2 %}
+      <label class="chip-check">
+        <input type="checkbox" name="status2" value="{{ s }}" {% if s in cur_s2 %}checked{% endif %}>
+        <span class="chip-label" style="--chip-color:{{ STATUS_COLORS2[s] }}">{{ STATUS_LABELS2[s] }}</span>
+      </label>
+      {% endfor %}
+    </div>
   </div>
   <button class="btn" type="submit">Сохранить</button>
 </form>
