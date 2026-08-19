@@ -1,0 +1,293 @@
+diff --git a/app.py b/app.py
+index b67a84b..51edfd9 100644
+--- a/app.py
++++ b/app.py
+@@ -27,6 +27,17 @@ STATUSES2 = ["untouched","phone_added","twofa_added"]
+ STATUS_LABELS2 = {"untouched":"Не тронут","phone_added":"Добавлен номер","twofa_added":"Добавлен 2FA"}
+ STATUS_COLORS2 = {"untouched":"#64748b","phone_added":"#22d3ee","twofa_added":"#818cf8"}
+ 
++def parse_status2(val):
++    """Разбирает status2 из БД в множество активных значений."""
++    if not val:
++        return set()
++    return {v.strip() for v in val.split(",") if v.strip() in STATUSES2}
++
++def format_status2(vals):
++    """Собирает множество значений status2 в строку для хранения."""
++    valid = [v for v in vals if v in STATUSES2]
++    return ",".join(valid) if valid else "untouched"
++
+ PERMS = {"view":"Просмотр","edit":"Редактирование","share":"Передача"}
+ 
+ app = Flask(__name__)
+@@ -43,6 +54,10 @@ def inject_css_version():
+         ver = hashlib.md5(css_path.read_bytes()).hexdigest()[:8]
+     return {"css_v": ver}
+ 
++@app.template_filter("parse_status2")
++def parse_status2_filter(val):
++    return parse_status2(val)
++
+ 
+ # ----- DB helpers -----
+ def get_db():
+@@ -89,7 +104,7 @@ def get_db():
+         if "status2" not in cols:
+             g.db.execute("ALTER TABLE accounts ADD COLUMN status2 TEXT DEFAULT 'untouched'")
+         # Сбрасываем старые значения status2 (new/warmup/active и т.п.) в "untouched"
+-        g.db.execute("UPDATE accounts SET status2='untouched' WHERE status2 NOT IN ('untouched','phone_added','twofa_added')")
++        g.db.execute("UPDATE accounts SET status2='untouched' WHERE status2 NOT IN ('untouched','phone_added','twofa_added') AND status2 NOT LIKE '%,%'")
+         g.db.commit()
+     return g.db
+ 
+@@ -269,8 +284,8 @@ def account_new():
+             fp = str(UPLOAD_DIR / safe)
+         st = f.get("status", "new")
+         if st not in STATUSES: st = "new"
+-        st2 = f.get("status2", "untouched")
+-        if st2 not in STATUSES2: st2 = "untouched"
++        st2_list = f.getlist("status2")
++        st2 = format_status2(st2_list)
+         cur = db.execute("""INSERT INTO accounts (first_name,second_name,address,sex,date_of_birth,
+             number,mail,mailPass,reMail,proxy,file_path,auth,status,status2,notes,owner_id)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+@@ -279,7 +294,7 @@ def account_new():
+              fp, f.get("auth") or None, st, st2, f.get("notes"), session["user_id"]))
+         db.commit()
+         return redirect(url_for("account_detail", acc_id=cur.lastrowid))
+-    return render_template("form.html", account=None, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2)
++    return render_template("form.html", account=None, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2, STATUS_COLORS2=STATUS_COLORS2)
+ 
+ 
+ @app.route("/accounts/<int:acc_id>/edit", methods=["GET","POST"])
+@@ -301,8 +316,11 @@ def account_edit(acc_id):
+             fp = str(UPLOAD_DIR / safe)
+         st = f.get("status", acc["status"])
+         if st not in STATUSES: st = acc["status"]
+-        st2 = f.get("status2", acc["status2"] or "untouched")
+-        if st2 not in STATUSES2: st2 = acc["status2"] or "untouched"
++        st2_list = f.getlist("status2")
++        if st2_list:
++            st2 = format_status2(st2_list)
++        else:
++            st2 = acc["status2"] or "untouched"
+         db.execute("""UPDATE accounts SET first_name=?,second_name=?,address=?,sex=?,date_of_birth=?,
+             number=?,mail=?,mailPass=?,reMail=?,proxy=?,file_path=?,auth=?,status=?,status2=?,notes=?,updated_at=datetime('now')
+             WHERE id=?""",
+@@ -311,7 +329,7 @@ def account_edit(acc_id):
+              fp, f.get("auth") or None, st, st2, f.get("notes"), acc_id))
+         db.commit()
+         return redirect(url_for("account_detail", acc_id=acc_id))
+-    return render_template("form.html", account=acc, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2)
++    return render_template("form.html", account=acc, STATUSES=STATUSES, STATUS_LABELS=STATUS_LABELS, STATUSES2=STATUSES2, STATUS_LABELS2=STATUS_LABELS2, STATUS_COLORS2=STATUS_COLORS2)
+ 
+ 
+ @app.route("/accounts/<int:acc_id>/status", methods=["POST"])
+@@ -321,14 +339,14 @@ def account_status(acc_id):
+         return ("", 403)
+     db = get_db()
+     st = request.form.get("status","")
+-    st2 = request.form.get("status2","")
++    st2_list = request.form.getlist("status2")
+     updates, params = [], []
+     if st in STATUSES:
+         updates.append("status=?")
+         params.append(st)
+-    if st2 in STATUSES2:
+-        updates.append("status2=?")
+-        params.append(st2)
++    st2 = format_status2(st2_list)
++    updates.append("status2=?")
++    params.append(st2)
+     if updates:
+         updates.append("updated_at=datetime('now')")
+         params.append(acc_id)
+diff --git a/google_accounts.db b/google_accounts.db
+index 74ed40f..d50975a 100644
+Binary files a/google_accounts.db and b/google_accounts.db differ
+diff --git a/static/style.css b/static/style.css
+index fff679e..80396cf 100644
+--- a/static/style.css
++++ b/static/style.css
+@@ -18,6 +18,10 @@
+   --grad: linear-gradient(135deg,#818cf8 0%,#9ca3af 55%,#cbd5e1 100%);
+   --ok: #34d399; --warn: #fbbf24; --danger: #f87171;
+   --input: rgba(255,255,255,.08);
++  --select-bg: rgba(255,255,255,.08);
++  --select-option-bg: rgba(30,35,60,.95);
++  --select-option-text: #eef2ff;
++  --select-option-hover: rgba(129,140,248,.30);
+   --blur: blur(26px) saturate(170%);
+   --shadow: 0 18px 50px rgba(0,0,0,.55);
+   --inner-hi: inset 0 1px 0 rgba(255,255,255,.14);   /* блик сверху */
+@@ -41,8 +45,10 @@
+   --grad: linear-gradient(135deg,#4f6bff,#64748b);
+   --ok: #059669; --warn: #b45309; --danger: #dc2626;
+   --input: rgba(255,255,255,.6);
+-  --select-bg: #ffffff;                  /* фон выпадающего списка */
+-  --select-option: #f1f5fb;              /* фон опций списка */
++  --select-bg: #f4f7fd;
++  --select-option-bg: #eef2fb;
++  --select-option-text: #1d2340;
++  --select-option-hover: rgba(79,107,255,.15);
+   --blur: blur(26px) saturate(150%);
+   --shadow: 0 18px 50px rgba(60,80,160,.22);
+   --inner-hi: inset 0 1px 0 rgba(255,255,255,.9);
+@@ -151,10 +157,26 @@ label{display:block;font-size:10.5px;color:var(--muted);margin-bottom:6px;font-w
+ input,select,textarea{width:100%;padding:11px 13px;border-radius:13px;
+   background:var(--input);border:1px solid var(--stroke);color:var(--text);font-size:13.5px;
+   font-family:inherit;transition:all .2s;backdrop-filter:blur(8px)}
+-/* выпадающие списки — тёмный вид */
+-select{background:var(--select-bg);color:var(--text);appearance:auto;cursor:pointer}
+-select option, select optgroup{background:var(--select-option);color:var(--text)}
+-select option:checked{background:rgba(129,140,248,.35);color:#fff}
++/* выпадающие списки — кастомный вид под тему */
++select{
++  background:var(--select-bg);color:var(--select-option-text);
++  appearance:auto;cursor:pointer;
++  color-scheme:dark;              /* наследуем от страницы */
++}
++:root[data-theme="light"] select{color-scheme:light}
++select option, select optgroup{
++  background:var(--select-option-bg) !important;
++  color:var(--select-option-text) !important;
++}
++select option:checked{
++  background:var(--select-option-hover) !important;
++  color:var(--select-option-text) !important;
++}
++select:focus option:hover,
++select option:hover{
++  background:var(--select-option-hover) !important;
++  color:var(--select-option-text) !important;
++}
+ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
+   box-shadow:0 0 0 4px rgba(129,140,248,.18),0 0 30px rgba(129,140,248,.15)}
+ textarea{min-height:76px;resize:vertical}
+@@ -238,6 +260,37 @@ h2{font-size:17px;margin:22px 0 12px;font-weight:700}
+ .perms{display:inline-block;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;
+   background:var(--glass-2);border:1px solid var(--stroke)}
+ 
++/* ---------- Чипы (множественные доп.статусы) ---------- */
++.chips-wrap{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
++.chip-check{display:inline-flex;cursor:pointer}
++.chip-check input{display:none}
++.chip-label{
++  display:inline-flex;align-items:center;gap:5px;
++  padding:7px 14px;border-radius:99px;font-size:12px;font-weight:700;
++  background:var(--glass-2);border:1.5px solid var(--stroke);color:var(--muted);
++  transition:all .2s;letter-spacing:.3px;user-select:none;
++  box-shadow:var(--inner-hi);
++}
++.chip-label::before{
++  content:"";width:7px;height:7px;border-radius:50%;
++  background:var(--chip-color,var(--muted));opacity:.45;
++  transition:opacity .2s;
++}
++.chip-check input:checked + .chip-label{
++  background:rgba(0,0,0,.12);
++  border-color:var(--chip-color,var(--accent));
++  color:var(--chip-color,var(--accent));
++  box-shadow:0 4px 18px rgba(129,140,248,.25),var(--inner-hi);
++}
++:root[data-theme="dark"] .chip-check input:checked + .chip-label{
++  background:rgba(255,255,255,.08);
++}
++.chip-check input:checked + .chip-label::before{opacity:1}
++.chip-label:hover{
++  border-color:var(--chip-color,var(--accent));
++  transform:translateY(-1px);
++}
++
+ /* ---------- Адаптив ---------- */
+ @media (max-width:860px){
+   .layout{flex-direction:column}
+diff --git a/templates/detail.html b/templates/detail.html
+index 00b5252..b85b461 100644
+--- a/templates/detail.html
++++ b/templates/detail.html
+@@ -6,8 +6,14 @@
+     {{ acc.mail }}
+     <span class="pills" style="margin-left:8px">
+       <span class="badge" style="background:{{ STATUS_COLORS[acc.status] }}">{{ STATUS_LABELS[acc.status] }}</span>
+-      {% set s2 = acc.status2 if acc.status2 in STATUSES2 else 'untouched' %}
+-      <span class="badge badge2" style="color:{{ STATUS_COLORS2[s2] }}">{{ STATUS_LABELS2[s2] }}</span>
++      {% set s2set = acc.status2|parse_status2 %}
++      {% if s2set %}
++        {% for sv in s2set %}
++        <span class="badge badge2" style="color:{{ STATUS_COLORS2[sv] }}">{{ STATUS_LABELS2[sv] }}</span>
++        {% endfor %}
++      {% else %}
++        <span class="badge badge2" style="color:var(--muted)">{{ STATUS_LABELS2['untouched'] }}</span>
++      {% endif %}
+     </span>
+   </h1>
+   <div class="btn-row">
+@@ -56,12 +62,20 @@
+ {% if can_edit %}
+ <div class="card">
+ <h2 style="margin-top:0">Изменение статусов</h2>
+-<form method="post" action="/accounts/{{ acc.id }}/status" class="btn-row" style="align-items:flex-end">
++<form method="post" action="/accounts/{{ acc.id }}/status" class="btn-row" style="align-items:flex-end;flex-wrap:wrap">
+   <div style="flex:1;min-width:180px"><label>Основной статус</label>
+     <select name="status">{% for s in STATUSES %}<option value="{{ s }}" {% if s==acc.status %}selected{% endif %}>{{ STATUS_LABELS[s] }}</option>{% endfor %}</select>
+   </div>
+-  <div style="flex:1;min-width:180px"><label>Дополнительный статус</label>
+-    <select name="status2">{% for s in STATUSES2 %}<option value="{{ s }}" {% set cur=acc.status2 if acc.status2 in STATUSES2 else 'untouched' %}{% if s==cur %}selected{% endif %}>{{ STATUS_LABELS2[s] }}</option>{% endfor %}</select>
++  <div style="flex:2;min-width:280px"><label>Доп. статусы (можно несколько)</label>
++    {% set cur_s2 = acc.status2|parse_status2 %}
++    <div class="chips-wrap">
++      {% for s in STATUSES2 %}
++      <label class="chip-check">
++        <input type="checkbox" name="status2" value="{{ s }}" {% if s in cur_s2 %}checked{% endif %}>
++        <span class="chip-label" style="--chip-color:{{ STATUS_COLORS2[s] }}">{{ STATUS_LABELS2[s] }}</span>
++      </label>
++      {% endfor %}
++    </div>
+   </div>
+   <button class="btn" type="submit">Сохранить</button>
+ </form>
+diff --git a/templates/form.html b/templates/form.html
+index 47f632a..d670f8c 100644
+--- a/templates/form.html
++++ b/templates/form.html
+@@ -17,7 +17,17 @@
+   <div><label>Proxy (ip:port:user:pass)</label><input name="proxy" value="{{ account.proxy or '' }}"></div>
+   <div><label>Auth (TOTP-secret)</label><input name="auth" value="{{ account.auth or '' }}" class="mono"></div>
+   <div><label>Основной статус</label><select name="status">{% for s in STATUSES %}<option value="{{ s }}" {% if (account and account.status==s) or (not account and s=='new') %}selected{% endif %}>{{ STATUS_LABELS[s] }}</option>{% endfor %}</select></div>
+-  <div><label>Доп. статус</label><select name="status2">{% for s in STATUSES2 %}<option value="{{ s }}" {% set cur=(account.status2 if account and account.status2 in STATUSES2 else 'untouched') if account else 'untouched' %}{% if s==cur %}selected{% endif %}>{{ STATUS_LABELS2[s] }}</option>{% endfor %}</select></div>
++  <div><label>Доп. статусы (можно несколько)</label>
++    {% set cur_s2 = (account.status2|parse_status2) if account else set() %}
++    <div class="chips-wrap">
++      {% for s in STATUSES2 %}
++      <label class="chip-check">
++        <input type="checkbox" name="status2" value="{{ s }}" {% if s in cur_s2 %}checked{% endif %}>
++        <span class="chip-label" style="--chip-color:{{ STATUS_COLORS2[s] }}">{{ STATUS_LABELS2[s] }}</span>
++      </label>
++      {% endfor %}
++    </div>
++  </div>
+   <div><label>Файл</label><input type="file" name="file">{% if account and account.file_path %}<div class="muted" style="font-size:11px">Загружен: <a href="/accounts/{{ account.id }}/file">{{ account.file_path.split('/')[-1] }}</a></div>{% endif %}</div>
+   <div style="grid-column:1/-1"><label>Заметки</label><textarea name="notes">{{ account.notes or '' }}</textarea></div>
+ </div>
+diff --git a/templates/index.html b/templates/index.html
+index c1be0da..b1d5ef2 100644
+--- a/templates/index.html
++++ b/templates/index.html
+@@ -29,10 +29,13 @@
+       <td>
+         <div class="pills">
+           <span class="badge" style="background:{{ STATUS_COLORS[a.status] }}">{{ STATUS_LABELS[a.status] }}</span>
+-          {% if a.status2 and a.status2 in STATUSES2 %}
+-          <span class="badge badge2" style="color:{{ STATUS_COLORS2[a.status2] }}">{{ STATUS_LABELS2[a.status2] }}</span>
++          {% set s2set = a.status2|parse_status2 %}
++          {% if s2set %}
++            {% for sv in s2set %}
++            <span class="badge badge2" style="color:{{ STATUS_COLORS2[sv] }}">{{ STATUS_LABELS2[sv] }}</span>
++            {% endfor %}
+           {% else %}
+-          <span class="badge badge2" style="color:var(--muted)">{{ STATUS_LABELS2['untouched'] }}</span>
++          <span class="badge badge2" style="color:var(--muted)">Не тронут</span>
+           {% endif %}
+         </div>
+       </td>
