@@ -291,39 +291,6 @@ h2{font-size:17px;margin:22px 0 12px;font-weight:700}
   transform:translateY(-1px);
 }
 
-/* ---------- Rental SMS (TextVerified) ---------- */
-.rental-sms-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px}
-.rental-phone{font-size:12px}
-.rental-sms-body{min-height:48px}
-.rental-sms-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:24px;color:var(--muted);font-size:13px}
-.spinner{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--stroke);border-top-color:var(--accent);animation:spin .9s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.rental-sms-meta{display:flex;flex-wrap:wrap;gap:14px;padding:8px 12px;border-radius:12px;
-  background:var(--glass-2);border:1px solid var(--stroke);font-size:12px;margin-bottom:12px}
-.rental-sms-list{display:flex;flex-direction:column;gap:8px;max-height:480px;overflow-y:auto;padding-right:4px}
-.rental-sms-item{background:var(--glass-2);border:1px solid var(--stroke);border-radius:14px;
-  padding:11px 14px;box-shadow:var(--inner-hi);transition:border-color .2s,transform .2s}
-.rental-sms-item:hover{border-color:var(--stroke-2);transform:translateX(2px)}
-.rental-sms-row1{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.rental-code{display:inline-flex;align-items:center;gap:6px;
-  font-family:"SF Mono",Menlo,Consolas,monospace;font-size:15px;font-weight:800;
-  letter-spacing:2px;padding:5px 12px;border-radius:10px;
-  background:linear-gradient(135deg,rgba(129,140,248,.22),rgba(34,211,238,.18));
-  color:var(--text);border:1px solid rgba(129,140,248,.4);
-  cursor:pointer;transition:all .18s;user-select:none;box-shadow:var(--inner-hi)}
-.rental-code:hover{filter:brightness(1.15);transform:translateY(-1px);box-shadow:0 6px 20px rgba(129,140,248,.4)}
-.rental-code.copied{background:linear-gradient(135deg,rgba(52,211,153,.30),rgba(34,211,238,.18))!important;border-color:rgba(52,211,153,.5)!important;color:var(--ok)!important}
-.rental-pill{font-size:10px;font-weight:700;letter-spacing:.4px;padding:3px 9px;border-radius:99px;
-  background:var(--glass-3);border:1px solid var(--stroke);color:var(--muted);text-transform:uppercase}
-.rental-sms-time{margin-left:auto;font-size:11px}
-.rental-sms-from{font-size:11.5px;margin-top:4px}
-.rental-sms-text{font-size:12px;margin-top:6px;padding:6px 10px;border-radius:8px;
-  background:rgba(0,0,0,.18);border:1px solid var(--stroke);word-break:break-word;white-space:pre-wrap}
-:root[data-theme="light"] .rental-sms-text{background:rgba(0,0,0,.04)}
-.rental-sms-list::-webkit-scrollbar{width:6px}
-.rental-sms-list::-webkit-scrollbar-thumb{background:var(--stroke-2);border-radius:99px}
-.rental-sms-list::-webkit-scrollbar-track{background:transparent}
-
 /* ---------- Адаптив ---------- */
 @media (max-width:860px){
   .layout{flex-direction:column}
