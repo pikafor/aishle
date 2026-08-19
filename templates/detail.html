@@ -82,6 +82,29 @@
 </div>
 {% endif %}
 
+{# ---- История rental-SMS из TextVerified ---- #}
+<div class="card" id="rental-sms-card">
+  <div class="rental-sms-head">
+    <h2 style="margin:0">История rental-SMS <span class="muted" style="font-size:12px">TextVerified</span></h2>
+    <div class="btn-row">
+      <span class="rental-phone muted mono" id="rentalPhoneLabel">{% if acc.number %}{{ acc.number }}{% else %}— телефон не указан —{% endif %}</span>
+      <button class="btn small sec" type="button" id="rentalSmsRefresh" {% if not acc.number %}disabled{% endif %}>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 3v6h-6"/></svg>
+        Обновить
+      </button>
+    </div>
+  </div>
+  <div id="rentalSmsBody" class="rental-sms-body">
+    <div class="muted" style="padding:18px 0;text-align:center">
+      {% if not acc.number %}
+        Чтобы получить историю SMS, укажите номер телефона в редактировании аккаунта.
+      {% else %}
+        Нажмите «Обновить», чтобы получить историю кодов из TextVerified.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
 {% if can_share %}
 <h2 style="margin-top:24px">Доступ к аккаунту</h2>
 <div class="card">
@@ -113,5 +136,112 @@ setInterval(async()=>{
 },5000);
 function copyCode(){const c=document.getElementById('totpCode').textContent;navigator.clipboard.writeText(c).then(()=>{const b=event.target;const o=b.textContent;b.textContent='Скопировано';setTimeout(()=>b.textContent=o,1200)})}
 function toggle(id,valId){const e=document.getElementById(id);const v=document.getElementById(valId);if(e.textContent.startsWith('•')){e.textContent=v.textContent;e.nextElementSibling.nextElementSibling.textContent='скрыть'}else{e.textContent='••••••••';e.nextElementSibling.nextElementSibling.textContent='показать'}}
+
+// ---------- Rental SMS history (TextVerified) ----------
+(function(){
+  const accId = {{ acc.id }};
+  const body = document.getElementById('rentalSmsBody');
+  const btn = document.getElementById('rentalSmsRefresh');
+  if (!btn) return;
+
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function fmtTime(s){
+    if(!s) return '';
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return s;
+    return d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }
+  // Достаём код из SMS: 4-8 цифр подряд
+  function extractCode(text){
+    if(!text) return null;
+    const m = String(text).match(/\b(\d{4,8})\b/);
+    return m ? m[1] : null;
+  }
+  // Извлекаем телефон отправителя из текста (если он там есть)
+  function extractFrom(text){
+    if(!text) return '';
+    const m = String(text).match(/(\+?\d[\d\s\-]{8,})/);
+    return m ? m[1].trim() : '';
+  }
+
+  function renderEmpty(msg){
+    body.innerHTML = `<div class="muted" style="padding:18px 0;text-align:center">${esc(msg)}</div>`;
+  }
+  function renderError(msg){
+    body.innerHTML = `<div class="flash" style="margin:0">${esc(msg)}</div>`;
+  }
+  function renderLoading(){
+    body.innerHTML = `<div class="rental-sms-loading">
+      <div class="spinner"></div> Запрашиваю историю SMS…
+    </div>`;
+  }
+
+  function get(obj, ...keys){
+    for(const k of keys){
+      if(obj && obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
+    }
+    return '';
+  }
+
+  function renderItems(payload){
+    const items = payload.items || [];
+    if (!items.length){
+      renderEmpty(`SMS для ${esc(payload.phone||'')} не найдены.`);
+      return;
+    }
+    const meta = `<div class="rental-sms-meta">
+      <span class="muted">Телефон: <strong style="color:var(--text)">${esc(payload.phone)}</strong></span>
+      <span class="muted">Renewable: <strong style="color:var(--text)">${payload.renewable_count}</strong></span>
+      <span class="muted">Non-renewable: <strong style="color:var(--text)">${payload.nonrenewable_count}</strong></span>
+      <span class="muted">Обновлено: ${esc(fmtTime(payload.fetched_at))}</span>
+    </div>`;
+
+    const rows = items.map(it=>{
+      const text = get(it,'text','body','message','sms','content');
+      const code = get(it,'code','verification_code','verificationCode') || extractCode(text);
+      const from = get(it,'from','sender','from_number','fromNumber') || extractFrom(text);
+      const ts = get(it,'created_at','createdAt','received_at','receivedAt','date','timestamp');
+      const rtype = it._rental_type === 'renewable' ? 'Renewable'
+                   : it._rental_type === 'non-renewable' ? 'Non-renewable' : '';
+      const rtypePill = rtype ? `<span class="rental-pill">${rtype}</span>` : '';
+      const codeBlock = code ? `<span class="rental-code" onclick="navigator.clipboard.writeText('${esc(code)}'); this.classList.add('copied'); setTimeout(()=>this.classList.remove('copied'),1200)" title="Нажмите, чтобы скопировать">${esc(code)}</span>` : '';
+      return `<div class="rental-sms-item">
+        <div class="rental-sms-row1">
+          ${codeBlock}
+          ${rtypePill}
+          <span class="muted rental-sms-time">${esc(fmtTime(ts))}</span>
+        </div>
+        ${from ? `<div class="muted rental-sms-from">от ${esc(from)}</div>` : ''}
+        ${text ? `<div class="rental-sms-text mono">${esc(text)}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    body.innerHTML = meta + `<div class="rental-sms-list">${rows}</div>`;
+  }
+
+  async function load(force){
+    const url = `/accounts/${accId}/rental-sms` + (force ? '?refresh=1' : '');
+    renderLoading();
+    try{
+      const r = await fetch(url);
+      const j = await r.json();
+      if (!r.ok){
+        if (j.error === 'no_creds') renderEmpty('Не заданы API-креды TextVerified (см. «Настройки» в админ-панели).');
+        else if (j.error === 'no_phone') renderEmpty('У аккаунта не указан телефон.');
+        else renderError(j.message || ('Ошибка API: '+r.status));
+        return;
+      }
+      renderItems(j);
+    }catch(e){
+      renderError('Сеть: '+e.message);
+    }
+  }
+
+  btn.addEventListener('click', ()=>load(true));
+  // первый запрос — без force, чтобы сразу воспользоваться кэшем (если есть)
+  if (body.querySelector('.muted') && {{ 'true' if acc.number else 'false' }}){
+    load(false);
+  }
+})();
 </script>
 {% endblock %}

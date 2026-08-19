@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Google Account Manager — Flask + SQLite."""
-import sqlite3, os, io, csv
+import sqlite3, os, io, csv, json, time
 from datetime import date, datetime
 from pathlib import Path
 from functools import wraps
+from typing import Any, Dict, Optional
 
 from flask import (Flask, g, request, session, redirect, url_for,
                    render_template, flash, send_file, Response, jsonify)
@@ -12,11 +13,17 @@ from flask import (Flask, g, request, session, redirect, url_for,
 import pyotp
 from passlib.hash import bcrypt
 
+from textverified import TextVerifiedClient, TextVerifiedError, get_client, reset_client
+
 # ----- config -----
 DATABASE = Path(__file__).parent / "google_accounts.db"
 SECRET_KEY = os.environ.get("FLASK_SECRET", "change-me-1234567890")
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Кэш rental-SMS в памяти процесса (per-account, TTL 60 сек)
+SMS_CACHE: Dict[int, Dict[str, Any]] = {}
+SMS_CACHE_TTL = 60
 
 STATUSES = ["new","warmup","active","ready","blocked","suspended","archived"]
 STATUS_LABELS = dict(zip(STATUSES, ["Новый","Прогрев","Активный","Готов","Заблокирован","Приостановлен","Архив"]))
@@ -97,6 +104,11 @@ def get_db():
                 granted_by INTEGER,
                 granted_at TEXT DEFAULT (datetime('now')),
                 UNIQUE(account_id, user_id)
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at TEXT DEFAULT (datetime('now'))
             );
         """)
         # Миграция для существующих БД: добавляем status2, если нет
@@ -471,6 +483,158 @@ def export_csv():
     out.seek(0)
     return Response(out.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition":"attachment; filename=accounts.csv"})
+
+
+# ---- settings (key-value) ----
+def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
+    row = get_db().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+def set_setting(key: str, value: Optional[str]) -> None:
+    db = get_db()
+    if value is None or value == "":
+        db.execute("DELETE FROM settings WHERE key=?", (key,))
+    else:
+        db.execute("""INSERT INTO settings (key, value, updated_at)
+                      VALUES (?, ?, datetime('now'))
+                      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')""",
+                   (key, value))
+    db.commit()
+
+def tv_creds() -> tuple[Optional[str], Optional[str]]:
+    return get_setting("tv_username"), get_setting("tv_api_key")
+
+
+# ---- admin: settings ----
+@app.route("/admin/settings", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_settings():
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        if action == "test":
+            try:
+                client = get_client(get_setting("tv_username"), get_setting("tv_api_key"))
+                # попытка получить токен = ping API
+                _ = client._get_token()
+                flash("Подключение к TextVerified: ОК","ok")
+            except TextVerifiedError as e:
+                flash(f"TextVerified: {e}", "error")
+            except Exception as e:
+                flash(f"Ошибка: {e}", "error")
+        else:
+            set_setting("tv_username", (request.form.get("tv_username") or "").strip())
+            # apiKey: если введено — сохраняем, иначе оставляем как есть (чтобы случайно не затереть)
+            new_key = (request.form.get("tv_api_key") or "").strip()
+            if new_key:
+                set_setting("tv_api_key", new_key)
+            reset_client()
+            flash("Настройки сохранены","ok")
+        return redirect(url_for("admin_settings"))
+
+    tv_user, tv_key = tv_creds()
+    # маскируем ключ в форме
+    if tv_key and len(tv_key) >= 8:
+        masked = tv_key[:4] + "…" + tv_key[-4:]
+    elif tv_key:
+        masked = tv_key[:1] + "•" * (len(tv_key) - 2) + tv_key[-1:] if len(tv_key) >= 3 else "•••"
+    else:
+        masked = ""
+    return render_template("settings.html", tv_user=tv_user or "", tv_key_masked=masked, tv_key_set=bool(tv_key))
+
+
+# ---- rental SMS history ----
+def _normalize_phone(phone: str) -> str:
+    """Нормализует телефон к E.164 — лучший вариант для API.
+    Если не получится — возвращает как есть.
+    """
+    if not phone:
+        return ""
+    p = phone.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if p.startswith("+"):
+        return p
+    if p.startswith("8") and len(p) == 11:
+        return "+7" + p[1:]
+    if p.isdigit() and len(p) == 10:
+        return "+1" + p
+    if p.isdigit():
+        return "+" + p
+    return p
+
+def _sms_cache_get(acc_id: int):
+    entry = SMS_CACHE.get(acc_id)
+    if not entry:
+        return None
+    if time.time() - entry["ts"] > SMS_CACHE_TTL:
+        SMS_CACHE.pop(acc_id, None)
+        return None
+    return entry
+
+def _sms_cache_put(acc_id: int, payload: Dict[str, Any]):
+    SMS_CACHE[acc_id] = {"ts": time.time(), "payload": payload}
+
+def _sms_cache_invalidate(acc_id: int):
+    SMS_CACHE.pop(acc_id, None)
+
+@app.route("/accounts/<int:acc_id>/rental-sms", methods=["GET"])
+@login_required
+def account_rental_sms(acc_id):
+    """Возвращает JSON со списком rental-SMS для аккаунта (по его phone).
+    Query: ?refresh=1 — игнорировать кэш.
+    """
+    if not can_view(acc_id):
+        return jsonify(error="forbidden"), 403
+    db = get_db()
+    acc = db.execute("SELECT id, number FROM accounts WHERE id=?", (acc_id,)).fetchone()
+    if not acc:
+        return jsonify(error="not_found"), 404
+
+    want_refresh = request.args.get("refresh") == "1"
+    if not want_refresh:
+        cached = _sms_cache_get(acc_id)
+        if cached:
+            payload = dict(cached["payload"])
+            payload["cached"] = True
+            return jsonify(payload)
+
+    tv_user, tv_key = tv_creds()
+    if not tv_user or not tv_key:
+        return jsonify(error="no_creds",
+                       message="API-креды TextVerified не заданы (Настройки администратора)."), 400
+
+    phone = _normalize_phone(acc["number"] or "")
+    if not phone:
+        return jsonify(error="no_phone", message="У аккаунта не указан телефон."), 400
+
+    try:
+        client = get_client(tv_user, tv_key)
+        grouped = client.get_rental_sms_by_phone(phone)
+    except TextVerifiedError as e:
+        return jsonify(error="api_error", message=str(e)), 502
+
+    # сортируем всё вместе по дате (если есть), последние сверху
+    def _ts(it):
+        for k in ("created_at", "received_at", "createdAt", "receivedAt", "date", "timestamp"):
+            if k in it and it[k]:
+                return it[k]
+        return ""
+
+    flat = []
+    for rtype, items in grouped.items():
+        for it in items:
+            flat.append({**it, "_rental_type": rtype})
+    flat.sort(key=_ts, reverse=True)
+
+    payload = {
+        "phone": phone,
+        "renewable_count": len(grouped["renewable"]),
+        "nonrenewable_count": len(grouped["non-renewable"]),
+        "items": flat[:200],          # ограничим 200 последних
+        "fetched_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "cached": False,
+    }
+    _sms_cache_put(acc_id, payload)
+    return jsonify(payload)
 
 
 # ---- serve ----
