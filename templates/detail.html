@@ -197,12 +197,13 @@ function toggle(id,valId){const e=document.getElementById(id);const v=document.g
     </div>`;
 
     const rows = items.map(it=>{
-      const text = get(it,'text','body','message','sms','content');
-      const code = get(it,'code','verification_code','verificationCode') || extractCode(text);
+      const text = get(it,'smsContent','text','body','message','sms','content');
+      // parsedCode приходит от TextVerified готовым; если нет — выдираем цифры из текста
+      const code = get(it,'parsedCode','code','verification_code','verificationCode') || extractCode(text);
       const from = get(it,'from','sender','from_number','fromNumber') || extractFrom(text);
-      const ts = get(it,'created_at','createdAt','received_at','receivedAt','date','timestamp');
+      const ts = get(it,'createdAt','created_at','receivedAt','received_at','date','timestamp');
       const rtype = it._rental_type === 'renewable' ? 'Renewable'
-                   : it._rental_type === 'non-renewable' ? 'Non-renewable' : '';
+                   : it._rental_type === 'nonrenewable' ? 'Non-renewable' : '';
       const rtypePill = rtype ? `<span class="rental-pill">${rtype}</span>` : '';
       const codeBlock = code ? `<span class="rental-code" onclick="navigator.clipboard.writeText('${esc(code)}'); this.classList.add('copied'); setTimeout(()=>this.classList.remove('copied'),1200)" title="Нажмите, чтобы скопировать">${esc(code)}</span>` : '';
       return `<div class="rental-sms-item">

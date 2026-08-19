@@ -19,11 +19,21 @@ class TextVerifiedError(Exception):
 
 
 class TextVerifiedClient:
-    """Простой синхронный клиент: один инстанс = один набор кредов."""
+    """Простой синхронный клиент: один инстанс = один набор кредов.
 
-    def __init__(self, api_username: str, api_key: str, base_url: str = API_BASE):
-        if not api_username or not api_key:
-            raise TextVerifiedError("Не заданы apiUsername или apiKey")
+    Аутентификация (по документации v2):
+        POST /api/pub/v2/auth
+        Headers: X-API-KEY + X-API-USERNAME
+        Ответ:   { token, expiresIn, expiresAt }
+
+    Если username не задан — пробуем legacy-эндпоинт
+    POST /api/SimpleAuthentication с заголовком x-simple-api-access-token
+    (достаточно одного API-ключа).
+    """
+
+    def __init__(self, api_username: str = "", api_key: str = "", base_url: str = API_BASE):
+        if not api_key:
+            raise TextVerifiedError("Не задан API-ключ TextVerified")
         self.api_username = api_username
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -33,26 +43,62 @@ class TextVerifiedClient:
 
     # -------- auth --------
     def _authenticate(self) -> None:
-        """POST /api/pub/v2/auth -> { bearer_token, expires_in, ... }"""
-        url = f"{self.base_url}/auth"
-        try:
-            r = requests.post(
-                url,
-                json={"apiUsername": self.api_username, "apiKey": self.api_key},
-                timeout=15,
-            )
-        except requests.RequestException as e:
-            raise TextVerifiedError(f"Сеть: {e}") from e
+        headers = {"Accept": "application/json"}
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        if self.api_username:
+            headers["X-API-USERNAME"] = self.api_username
 
-        if r.status_code >= 400:
-            raise TextVerifiedError(f"Auth {r.status_code}: {self._err_text(r)}")
-        data = r.json()
-        token = data.get("bearer_token") or data.get("access_token") or data.get("token")
+        last_err: Optional[Exception] = None
+        # 1) v2: заголовки X-API-KEY / X-API-USERNAME
+        try:
+            r = requests.post(f"{self.base_url}/auth", headers=headers, timeout=15)
+            if r.status_code < 400:
+                self._parse_token(r.json(), legacy=False)
+                return
+            if r.status_code in (400, 401, 403):
+                last_err = TextVerifiedError(f"Auth v2 {r.status_code}: {self._err_text(r)}")
+            else:
+                last_err = TextVerifiedError(f"Auth v2 {r.status_code}: {self._err_text(r)}")
+        except requests.RequestException as e:
+            last_err = TextVerifiedError(f"Сеть (auth v2): {e}")
+
+        # 2) legacy: только API-ключ (тот же хост, путь /api/SimpleAuthentication)
+        if not self.api_username:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(self.base_url)
+            legacy_url = urlunparse((parsed.scheme, parsed.netloc,
+                                     "/api/SimpleAuthentication", "", "", ""))
+            try:
+                r = requests.post(
+                    legacy_url,
+                    headers={"x-simple-api-access-token": self.api_key,
+                             "Content-Type": "application/json", "Accept": "application/json"},
+                    timeout=15,
+                )
+                if r.status_code < 400:
+                    self._parse_token(r.json(), legacy=True)
+                    return
+                last_err = TextVerifiedError(f"Auth legacy {r.status_code}: {self._err_text(r)}")
+            except requests.RequestException as e:
+                last_err = TextVerifiedError(f"Сеть (auth legacy): {e}")
+
+        raise TextVerifiedError(str(last_err) or "Auth: неизвестная ошибка")
+
+    def _parse_token(self, data: Dict[str, Any], legacy: bool) -> None:
+        # v2: { token, expiresIn, expiresAt }   legacy: { bearer_token, expiration, ticks }
+        token = data.get("token") or data.get("bearer_token") or data.get("access_token")
         if not token:
-            raise TextVerifiedError(f"Auth: нет bearer_token в ответе: {data}")
+            raise TextVerifiedError(f"Auth: нет токена в ответе: {data}")
         self._token = token
-        # expires_in — секунды; запас прочности
-        self._token_expires_at = time.time() + float(data.get("expires_in", 1800)) - TOKEN_TTL_SAFETY
+        expires_in = data.get("expiresIn") or data.get("expires_in") or data.get("ticks") or 1800
+        try:
+            expires_in = float(expires_in)
+        except (TypeError, ValueError):
+            expires_in = 1800.0
+        if expires_in <= 0:
+            expires_in = 1800.0
+        self._token_expires_at = time.time() + expires_in - TOKEN_TTL_SAFETY
 
     def _get_token(self) -> str:
         with self._lock:
@@ -64,7 +110,8 @@ class TextVerifiedClient:
     # -------- HTTP --------
     def _request(self, method: str, path: str, params: Optional[dict] = None) -> Dict[str, Any]:
         token = self._get_token()
-        url = f"{self.base_url}{path}"
+        # path может быть как путём ('/sms'), так и полным URL из links.next
+        url = path if path.startswith("http") else f"{self.base_url}{path}"
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
         try:
             r = requests.request(method, url, headers=headers, params=params, timeout=20)
@@ -99,7 +146,7 @@ class TextVerifiedClient:
     # -------- public API --------
     def list_sms(
         self,
-        to_number: Optional[str] = None,
+        to: Optional[str] = None,
         reservation_type: Optional[str] = None,
         reservation_id: Optional[str] = None,
         limit: int = 100,
@@ -107,12 +154,17 @@ class TextVerifiedClient:
     ) -> List[Dict[str, Any]]:
         """GET /api/pub/v2/sms с пагинацией.
 
-        reservation_type: 'renewable' | 'non-renewable' | 'verification' (опц.)
-        Возвращает плоский список объектов SMS из всех страниц.
+        По документации:
+          ?to=<номер>            — фильтр по номеру
+          ?reservationId=<id>    — фильтр по резервации
+          ?reservationType=renewable|nonrenewable|verification
+
+        Ответ: { data: [ {id, from, to, createdAt, smsContent, parsedCode, encrypted} ],
+                 hasNext, hasPrevious, count, links: {current, previous, next} }
         """
         params: Dict[str, Any] = {"limit": limit}
-        if to_number:
-            params["to_number"] = to_number
+        if to:
+            params["to"] = to
         if reservation_type:
             params["reservationType"] = reservation_type
         if reservation_id:
@@ -122,13 +174,8 @@ class TextVerifiedClient:
         next_href: Optional[str] = None
         for _ in range(max_pages):
             if next_href:
-                # следующая страница приходит полным href
-                # она может уже содержать query-string
-                from urllib.parse import urlparse, parse_qs
-                p = urlparse(next_href)
-                # собираем новые params, перебивая предыдущие
-                page_params = {k: v[0] for k, v in parse_qs(p.query).items()}
-                payload = self._request("GET", p.path, params=page_params)
+                # следующая страница приходит полным URL (с собственным query-string)
+                payload = self._request("GET", next_href)
             else:
                 payload = self._request("GET", "/sms", params=params)
 
@@ -147,14 +194,21 @@ class TextVerifiedClient:
         return all_items
 
     def get_rental_sms_by_phone(self, phone: str) -> Dict[str, List[Dict[str, Any]]]:
-        """Возвращает SMS для номера, сгруппированные по типу rental."""
-        result: Dict[str, List[Dict[str, Any]]] = {"renewable": [], "non-renewable": []}
-        for rtype in ("renewable", "non-renewable"):
+        """Возвращает SMS для номера, сгруппированные по типу rental.
+
+        Если оба типа упали (например, неверные креды) — поднимается
+        TextVerifiedError, чтобы UI показал ошибку, а не пустой список.
+        """
+        result: Dict[str, List[Dict[str, Any]]] = {"renewable": [], "nonrenewable": []}
+        errors: List[str] = []
+        for rtype in ("renewable", "nonrenewable"):
             try:
-                result[rtype] = self.list_sms(to_number=phone, reservation_type=rtype)
-            except TextVerifiedError:
-                # если один из типов упал — не валим всё, оставим пустой список
+                result[rtype] = self.list_sms(to=phone, reservation_type=rtype)
+            except TextVerifiedError as e:
                 result[rtype] = []
+                errors.append(str(e))
+        if not result["renewable"] and not result["nonrenewable"] and errors:
+            raise TextVerifiedError(errors[0])
         return result
 
 
